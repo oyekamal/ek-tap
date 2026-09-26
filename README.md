@@ -4,7 +4,11 @@
 
 Built in **Godot 4.7** with no image assets. Every sprite is drawn in code and every sound is synthesized at runtime. Several games take their flavour from Pakistan: chai at a roadside dhaba, Basant kites, kabaddi, a tawa roti, bazaar haggling and a busy chowk.
 
+<p align="center"><img src="docs/screenshots/menu.png" width="280" alt="Ek Tap game picker"></p>
+
 ![All 12 games](docs/screenshots/all.png)
+
+**Download:** the latest APK is on the [Releases page](../../releases).
 
 ## The games
 
