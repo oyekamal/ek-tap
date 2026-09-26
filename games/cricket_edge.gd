@@ -11,6 +11,8 @@ const BRACKET_LEAD := 0.3           # seconds the contact bracket slides in befo
 const CATCH_CHANCE := 0.35          # chance an early big shot is caught
 const BALLS_PER_OVER := 6
 const OVERS_TO_MIN_WINDOW := 3.0    # overs (1 -> 4) to reach WINDOW_MIN
+const BALL_RADIUS := 13.0           # px at 720 wide -- must stay clearly >= 12
+const BOWL_Y_F := 0.34              # keeps the bowler figure's head clear of the top ~200px HUD band
 
 const GRASS := Color("#3E8E41")
 const PITCH := Color("#D9C98A")
@@ -145,7 +147,7 @@ func _tick(dt: float) -> void:
 
 func _draw_game() -> void:
 	var u := _unit()
-	var bowl_y := H * 0.14
+	var bowl_y := H * BOWL_Y_F
 	var bat_y := H * 0.78
 	var stump_y := H * 0.85
 	var keep_y := H * 0.94
@@ -194,8 +196,13 @@ func _draw_game() -> void:
 			_:
 				bx2 = W / 2.0 - 10.0 * u
 				by2 = bat_y - 6.0 * u
-	draw_circle(Vector2(bx2, by2), 8.0 * u, BALL_COL)
-	draw_arc(Vector2(bx2, by2), 8.0 * u, 0, PI, 6, BALL_SEAM, 1.5 * u)
+	if state == "delivery":
+		for i in 3:
+			var trail_t: float = clampf((ball_t - float(i + 1) * 0.03) / t_arrival, 0.0, 1.4)
+			var trail_y: float = lerpf(bowl_y, bat_y, trail_t)
+			draw_circle(Vector2(bx2, trail_y), (BALL_RADIUS - float(i) * 3.0) * u, Color(BALL_COL, 0.3 - float(i) * 0.08))
+	draw_circle(Vector2(bx2, by2), BALL_RADIUS * u, BALL_COL)
+	draw_arc(Vector2(bx2, by2), BALL_RADIUS * u, 0, PI, 6, BALL_SEAM, 1.5 * u)
 
 func _figure(pos: Vector2, col: Color, u: float, scl: float) -> void:
 	set_xform(pos, 0, Vector2(scl, scl))

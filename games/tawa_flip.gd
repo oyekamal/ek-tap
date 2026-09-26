@@ -28,6 +28,7 @@ const DIAL_FILL := Color("#FFD98A")
 const ZONE_COL := Color("#7CE38B")
 const FAIL_COL := Color("#FF6B5E")
 const DUST := Color("#D8C9A3")
+const FLOUR := Color("#FFF6E0")
 
 var state := "idle"        # idle | flying | landed_good | landed_bad
 var state_t := 0.0
@@ -114,6 +115,7 @@ func _land() -> void:
 		popup("CLEAN" + (" x%d" % combo if combo > 1 else ""), "+%d" % pts, Vector2(W / 2.0, H * PAN_Y_F - 190.0), ink)
 		Sfx.chord([523.0, 659.0, 784.0])
 		burst(Vector2(W / 2.0, H * PAN_Y_F), ROTI, 16, 0.45)
+		burst(Vector2(W / 2.0, H * PAN_Y_F - 10.0 * _unit()), FLOUR, 14, 0.3)   # flour puff on landing
 		zone_w = maxf(ZONE_MIN, zone_w * ZONE_SHRINK)
 		charge_period = maxf(CHARGE_PERIOD_MIN, charge_period * CHARGE_SPEEDUP)
 		_new_zone()
@@ -130,19 +132,25 @@ func _land() -> void:
 func _draw_game() -> void:
 	var u := _unit()
 	var pan_y := H * PAN_Y_F
-	# stove + flame
+	# stove
 	draw_rect(Rect2(W / 2.0 - 150.0 * u, pan_y + 26.0 * u, 300.0 * u, 90.0 * u), WOOD)
-	for i in 8:
-		var fx: float = W / 2.0 - 120.0 * u + i * 34.0 * u
-		var flick: float = sin(Time.get_ticks_msec() / 60.0 + i) * 6.0 * u
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(fx - 8.0 * u, pan_y + 26.0 * u),
-			Vector2(fx + 8.0 * u, pan_y + 26.0 * u),
-			Vector2(fx + flick, pan_y - 4.0 * u),
-		]), FLAME_A if i % 2 == 0 else FLAME_B)
-	# tawa
+	# tawa -- drawn BEFORE the flames now, so the flames (wider than the pan and
+	# anchored below its rim) lick out visibly past its edges instead of being
+	# fully overpainted by it every frame.
 	_ellipse(Vector2(W / 2.0, pan_y), 165.0 * u, 46.0 * u, IRON_EDGE)
 	_ellipse(Vector2(W / 2.0, pan_y - 6.0 * u), 155.0 * u, 40.0 * u, IRON)
+	for i in 8:
+		var fx: float = W / 2.0 - 189.0 * u + i * 54.0 * u
+		var flick: float = sin(Time.get_ticks_msec() / 60.0 + i) * 8.0 * u
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(fx - 9.0 * u, pan_y + 60.0 * u),
+			Vector2(fx + 9.0 * u, pan_y + 60.0 * u),
+			Vector2(fx + flick, pan_y + 14.0 * u),
+		]), FLAME_A if i % 2 == 0 else FLAME_B)
+
+	# landing zone: a ring on the tawa itself showing where the roti will come down
+	if state == "idle" or state == "flying":
+		draw_arc(Vector2(W / 2.0, pan_y - 10.0 * u), 66.0 * u, 0, TAU, 28, Color(ZONE_COL, 0.5), 3.0 * u)
 
 	# charge dial: always visible
 	var gx := W / 2.0
@@ -163,17 +171,32 @@ func _draw_game() -> void:
 		var arc: float = sin(t * PI) * flight_h * H
 		var y: float = pan_y - 10.0 * u - arc
 		var ang: float = t * float(flight_rot) * PI
+		# short motion trail so the arc + spin read clearly, not just a static disc
+		for k in [0.12, 0.06]:
+			var tt: float = clampf(t - k, 0.0, 1.0)
+			var t_arc: float = sin(tt * PI) * flight_h * H
+			var t_y: float = pan_y - 10.0 * u - t_arc
+			var t_ang: float = tt * float(flight_rot) * PI
+			set_xform(Vector2(W / 2.0, t_y), t_ang, Vector2(1.0, 1.0))
+			_ellipse(Vector2.ZERO, 56.0 * u, 27.0 * u, Color(ROTI, 0.15))
+			set_xform()
 		_roti(Vector2(W / 2.0, y), 1.0, ang)
 	elif state == "landed_bad":
 		var k: float = clampf(state_t / 0.5, 0.0, 1.0)
 		_roti(Vector2(W / 2.0 + 70.0 * u * k, pan_y - 4.0 * u), 1.0 - 0.35 * k, 0.35 * k)
 
 func _roti(pos: Vector2, squash: float, ang: float) -> void:
+	var u := _unit()
 	set_xform(pos, ang, Vector2(1.0, squash))
-	_ellipse(Vector2.ZERO, 62.0 * _unit(), 30.0 * _unit(), ROTI)
+	_ellipse(Vector2.ZERO, 62.0 * u, 30.0 * u, ROTI)
+	# asymmetric spot pattern (varying radii, not a symmetric ring) so spin reads frame-to-frame
+	var spot_r := [34.0, 18.0, 30.0, 14.0, 26.0]
 	for i in 5:
 		var a: float = float(i) / 5.0 * TAU
-		draw_circle(Vector2(cos(a) * 34.0 * _unit(), sin(a) * 14.0 * _unit()), 5.0 * _unit(), ROTI_SPOT)
+		var r: float = spot_r[i] * u
+		draw_circle(Vector2(cos(a) * r, sin(a) * r * 0.45), 5.0 * u, ROTI_SPOT)
+	# one larger off-axis toasted mark -- the clearest single rotation tell
+	draw_circle(Vector2(40.0 * u, 6.0 * u), 9.0 * u, ROTI_SPOT)
 	set_xform()
 
 func _ellipse(center: Vector2, rx: float, ry: float, col: Color) -> void:

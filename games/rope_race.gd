@@ -33,7 +33,7 @@ const BELL_GOLD := Color("#FFC93C")
 const TXT := Color("#13233F")
 const CARD_COL := Color("#FFFDF6")
 const MY_COLOR := Color("#F2464B")
-const GHOST_COL := Color("#FFFFFF")
+const GHOST_COL := Color("#8FB8FF")
 
 # ---------- my climber ----------
 var h := 0.0
@@ -53,6 +53,8 @@ var trace_t := 0.0
 var ghost = null         # Array of heights every 0.1s, or null
 var parts: Array = []
 var flashes: Array = []
+var grip_flash_t := 0.0  # brief bar-pop when grip crosses the 50%/20% danger thresholds
+var _prev_grip := 1.0
 
 func _init() -> void:
 	game_id = "rope_race"
@@ -86,6 +88,8 @@ func _setup() -> void:
 	trace_t = 0.0
 	parts.clear()
 	flashes.clear()
+	grip_flash_t = 0.0
+	_prev_grip = 1.0
 	state = "idle"
 	var g = Save.get_data(game_id, "ghost", [])
 	ghost = g if g is Array and g.size() > 0 else null
@@ -125,8 +129,10 @@ func _finish() -> void:
 func _confetti() -> Dictionary:
 	var a := -PI / 2.0 + (rng.randf() - 0.5) * 2.2
 	var s := 200.0 + rng.randf() * 350.0
+	# finish always happens at h == GOAL with the camera settled on it (y_of(GOAL) == H*0.62),
+	# so anchor the celebration there instead of a fixed H*0.3 that can miss the climber.
 	return {
-		"x": W / 2, "y": H * 0.3, "vx": cos(a) * s, "vy": sin(a) * s,
+		"x": W / 2, "y": H * 0.62, "vx": cos(a) * s, "vy": sin(a) * s,
 		"t": 0.0, "life": 1.2 + rng.randf() * 0.6,
 		"c": Color(GO if rng.randi() % 2 == 0 else WARN),
 		"w": (5.0 + rng.randf() * 6.0) * _unit(), "rot": rng.randf() * 6.0,
@@ -161,6 +167,12 @@ func _tick(dt: float) -> void:
 				last_tick = h - SLIP_DROP
 		else:
 			grip = minf(1.0, grip + REGEN * dt)
+		if _prev_grip > 0.5 and grip <= 0.5:
+			grip_flash_t = 0.15
+		elif _prev_grip > 0.2 and grip <= 0.2:
+			grip_flash_t = 0.15
+		_prev_grip = grip
+		grip_flash_t = maxf(0.0, grip_flash_t - dt)
 		trace_t += dt
 		while trace_t >= 0.1:
 			trace_t -= 0.1
@@ -263,8 +275,15 @@ func _draw_game() -> void:
 	draw_rope.call(mx)
 
 	var nearest := roundi(h / KNOT_EVERY) * KNOT_EVERY
-	if state == "climb" and nearest > 0 and nearest < GOAL and absf(h - nearest) <= KNOT_WINDOW:
-		draw_circle(Vector2(mx, y_of.call(float(nearest))), 18.0 * u, Color(BELL_GOLD, 0.55))
+	if state == "climb" and nearest > 0 and nearest < GOAL:
+		var knot_dist: float = absf(h - nearest)
+		# approach telegraph: a faint ring that brightens well before the full-grip window,
+		# so "release near a knot" is taught by seeing it coming, not learned by accident.
+		if knot_dist <= KNOT_WINDOW * 3.0:
+			var k: float = 1.0 - knot_dist / (KNOT_WINDOW * 3.0)
+			draw_arc(Vector2(mx, y_of.call(float(nearest))), 20.0 * u, 0, TAU, 32, Color(BELL_GOLD, 0.1 + 0.3 * k), 3.0 * u)
+		if knot_dist <= KNOT_WINDOW:
+			draw_circle(Vector2(mx, y_of.call(float(nearest))), 18.0 * u, Color(BELL_GOLD, 0.55))
 	for f in flashes:
 		draw_arc(Vector2(mx, y_of.call(f.h)), 14.0 * u + f.t * 60.0 * u, 0, TAU, 32, Color(BELL_GOLD, 1.0 - f.t / 0.6), 4.0 * u)
 
@@ -276,16 +295,26 @@ func _draw_game() -> void:
 		var idx: int = mini(ghost.size() - 1, int((0.0 if state == "idle" else elapsed) * 10.0))
 		var gh: float = ghost[idx]
 		_climber(Vector2(gx, y_of.call(gh) + 30.0 * u), GHOST_COL, 1.0, false, u, 0.45)
+		text_c("BEST", Vector2(gx, y_of.call(gh) - 24.0 * u), 18, Color(GHOST_COL, 0.85), false)
 
 	# me
 	_climber(Vector2(mx, y_of.call(h) + 30.0 * u), MY_COLOR, grip, slip_t > 0.0, u, 1.0)
 
-	# grip bar beside my climber
+	# grip bar beside my climber's hands -- a hand icon on top that shakes and reddens
+	# as grip drains makes the bar self-explanatory without any caption.
+	var grip_col := GO if grip > 0.5 else (WARN if grip > 0.2 else DANGER)
+	var flash_k: float = grip_flash_t / 0.15
+	var bar_w: float = 8.0 * u * (1.0 + 0.15 * flash_k)
 	var gx2: float = mx + 30.0 * u
 	var gy_top: float = y_of.call(h) - 6.0 * u
-	draw_rect(Rect2(gx2, gy_top, 8.0 * u, 60.0 * u), Color(TXT, 0.25))
-	var grip_col := GO if grip > 0.5 else (WARN if grip > 0.2 else DANGER)
-	draw_rect(Rect2(gx2, gy_top + 60.0 * u * (1.0 - grip), 8.0 * u, 60.0 * u * grip), grip_col)
+	draw_rect(Rect2(gx2 - (bar_w - 8.0 * u) / 2.0, gy_top, bar_w, 60.0 * u), Color(TXT, 0.25))
+	draw_rect(Rect2(gx2 - (bar_w - 8.0 * u) / 2.0, gy_top + 60.0 * u * (1.0 - grip), bar_w, 60.0 * u * grip), grip_col.lerp(Color.WHITE, flash_k * 0.6))
+	var hand_wob: float = sin(Time.get_ticks_msec() / 45.0) * (1.0 - grip) * 5.0 * u
+	var hand_pos := Vector2(gx2 + 4.0 * u + hand_wob, gy_top - 14.0 * u)
+	draw_circle(hand_pos, 9.0 * u, grip_col)
+	draw_circle(hand_pos + Vector2(0, 3.0 * u), 5.0 * u, Color(grip_col, 0.6))
+	if state == "climb" and elapsed < 1.5:
+		text_c("GRIP", hand_pos + Vector2(0, -26.0 * u), 18, Color(ink, clampf(1.5 - elapsed, 0.0, 1.0)), false)
 
 	for p in parts:
 		set_xform(Vector2(p.x, p.y), p.rot)
