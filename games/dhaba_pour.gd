@@ -43,6 +43,7 @@ var cup_gap := 60.0
 var drink: Dictionary
 var parcels: Array = []    # [{y, v, amt}]
 var drops: Array = []      # [{x, y, vx, vy, t, life, c, r, steam}]
+var popup_plaque_t := 0.0  # counts down while a grade/spill popup is on screen
 
 func _init() -> void:
 	game_id = "dhaba_pour"
@@ -111,6 +112,7 @@ func _judge() -> void:
 	var off := roundi((level - cup_line) * 100.0)
 	var sub := ("on the line" if off == 0 else ("%d%% over" % off if off > 0 else "%d%% under" % -off)) + "  +%d" % pts
 	popup(grade + (" x%d" % mult if mult > 1 else ""), sub, Vector2(W / 2, _counter_y() + 80.0 * _unit()), INK)
+	popup_plaque_t = 1.1
 	if grade == "PERFECT":
 		Sfx.chord([587.0, 740.0, 880.0])
 		shake(0.2)
@@ -138,6 +140,7 @@ func _spill() -> void:
 			"t": 0.0, "life": 0.9 + rng.randf() * 0.4, "c": drink.stream, "r": 2.0 + rng.randf() * 4.0, "steam": false,
 		})
 	popup("SPILLED", "over the rim", Vector2(W / 2, _counter_y() + 80.0 * _unit()), INK)
+	popup_plaque_t = 1.1
 	var ended := lose_life()
 	if not ended:
 		state = "spilled"
@@ -204,11 +207,20 @@ func _tick(dt: float) -> void:
 			d.x += d.vx * dt
 			d.y = minf(_counter_y() + 4.0, d.y + d.vy * dt)
 	drops = drops.filter(func(d): return d.t < d.life)
+	popup_plaque_t = maxf(0.0, popup_plaque_t - dt)
 
 func _draw_game() -> void:
 	var u := _unit()
 	var cy := _counter_y()
 	draw_rect(Rect2(0, cy, W, 10.0 * u), WOOD_TOP)
+	# dark plaque behind the grade/spill popup so cream ink keeps contrast against
+	# the wood counter for its whole ~0.7s full-opacity window, then fades in step
+	# with the popup's own fade (matches core popup()'s t<0.7 full / 0.7-1.1 fade)
+	if popup_plaque_t > 0.0:
+		var elapsed: float = 1.1 - popup_plaque_t
+		var pa: float = 0.8 if elapsed < 0.7 else 0.8 * clampf(1.0 - (elapsed - 0.7) / 0.4, 0.0, 1.0)
+		var pl_pos := Vector2(W / 2, cy + 80.0 * u)
+		draw_rect(Rect2(pl_pos.x - 190.0 * u, pl_pos.y - 46.0 * u, 380.0 * u, 100.0 * u), Color(WALL, pa))
 	draw_rect(Rect2(0, cy + 10.0 * u, W, H - cy), WOOD)
 	# truck-art chevrons along the counter edge
 	var s := 14.0 * u

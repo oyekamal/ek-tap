@@ -30,6 +30,7 @@ var shimmer_t := 0.0
 var state := "ready"       # ready | filling | settling | crash
 var state_t := 0.0
 var trail := []
+var popup_plaque_t := 0.0  # counts down while a grade/crash popup is on screen
 
 func _init() -> void:
 	game_id = "scale_call"
@@ -100,6 +101,7 @@ func _tick(dt: float) -> void:
 			if state_t > 0.9 and running:
 				round_i += 1
 				_new_round()
+	popup_plaque_t = maxf(0.0, popup_plaque_t - dt)
 	_push_trail()
 
 func _grade() -> void:
@@ -113,6 +115,7 @@ func _grade() -> void:
 		burst(_needle_tip(), BRASS, 22, 0.6)
 		shake(0.15)
 		popup(("LEVEL ×%d" % mult) if mult > 1 else "LEVEL", "%dg  +%d" % [int(weight_held), pts], Vector2(W / 2.0, H * 0.25), BRASS)
+		popup_plaque_t = 1.1
 		_advance()
 	elif dev <= LEVEL_GOOD:
 		combo = 0
@@ -120,6 +123,7 @@ func _grade() -> void:
 		add_score(pts2)
 		Sfx.tone(440.0, 0.15)
 		popup("CLOSE", "%dg  +%d" % [int(weight_held), pts2], Vector2(W / 2.0, H * 0.25), INK)
+		popup_plaque_t = 1.1
 		_advance()
 	elif dev <= LEVEL_OK:
 		combo = 0
@@ -127,6 +131,7 @@ func _grade() -> void:
 		add_score(pts3)
 		Sfx.tone(330.0, 0.15)
 		popup("TIPPED", "%dg  +%d" % [int(weight_held), pts3], Vector2(W / 2.0, H * 0.25), INK)
+		popup_plaque_t = 1.1
 		_advance()
 	else:
 		_crash()
@@ -144,6 +149,7 @@ func _crash() -> void:
 	var dir := "right" if needle_pos > 0.0 else "left"
 	burst(_needle_tip(), BRASS, 32, 1.1)
 	popup("SPILLED", "crashed to the " + dir, Vector2(W / 2.0, H * 0.25), SPILL)
+	popup_plaque_t = 1.1
 	state = "crash"
 	state_t = 0.0
 	lose_life()
@@ -165,6 +171,15 @@ func _pan(pos: Vector2, col: Color) -> void:
 func _draw_game() -> void:
 	var pivot := Vector2(W * 0.5, H * 0.42)
 	var beam_len: float = minf(W, H) * 0.34
+
+	# dark plaque behind the grade/crash popup text so cream ink keeps contrast
+	# against the maroon background for its whole full-opacity window, then fades
+	# in step with the popup's own fade (matches core popup()'s t<0.7 full / 0.7-1.1 fade)
+	if popup_plaque_t > 0.0:
+		var elapsed: float = 1.1 - popup_plaque_t
+		var pa: float = 0.78 if elapsed < 0.7 else 0.78 * clampf(1.0 - (elapsed - 0.7) / 0.4, 0.0, 1.0)
+		var pl_pos := Vector2(W / 2.0, H * 0.25)
+		draw_rect(Rect2(pl_pos.x - 190.0, pl_pos.y - 46.0, 380.0, 110.0), Color("#2A0E16", pa))
 
 	# residual-momentum motion trail (drawn first, underneath the live beam)
 	for i in trail.size():

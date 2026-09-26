@@ -24,6 +24,8 @@ var hold_t := 0.0
 var fly_y := 0.0
 var fly_v := 0.0
 var bot_target := 0.9
+var combo_break_n := 0       # streak size that just broke, for the shatter readout
+var combo_break_t := -1.0    # -1 = no break animation playing; else seconds elapsed
 
 func _init() -> void:
 	game_id = "almost_pop"
@@ -69,6 +71,12 @@ func _lock_in() -> void:
 	Sfx.loop_stop()
 	var fill := r / ring_r
 	var grade := "PERFECT" if fill >= PERFECT else "GREAT" if fill >= GREAT else "GOOD" if fill >= GOOD else "SMALL"
+	if grade != "PERFECT" and combo >= 3:
+		# distinct combo-break feedback: the ×N readout shatters/drops instead of
+		# silently disappearing when a PERFECT streak ends
+		combo_break_n = combo
+		combo_break_t = 0.0
+		Sfx.tone(220.0, 0.3, "tri", 0.5, 90.0)
 	combo = combo + 1 if grade == "PERFECT" else 0
 	var mult := mini(combo, 5) if grade == "PERFECT" else 1
 	var pts: int = {"PERFECT": 100, "GREAT": 50, "GOOD": 25, "SMALL": 5}[grade] * mult
@@ -88,6 +96,10 @@ func _pop() -> void:
 	Sfx.tone(0, 0.18, "noise", 0.8)
 	hitstop(90)
 	shake(0.9)
+	if combo >= 3:
+		combo_break_n = combo
+		combo_break_t = 0.0
+		Sfx.tone(220.0, 0.3, "tri", 0.5, 90.0)
 	combo = 0
 	burst(_center(), COLORS[tier], 40, 1.2)
 	popup("POP", "touched the pins", Vector2(W / 2, _center().y - ring_r - 100), INK)
@@ -100,6 +112,10 @@ func _center() -> Vector2:
 
 func _tick(dt: float) -> void:
 	state_t += dt
+	if combo_break_t >= 0.0:
+		combo_break_t += dt
+		if combo_break_t > 0.28:
+			combo_break_t = -1.0
 	match state:
 		"inflating":
 			hold_t += dt
@@ -140,6 +156,13 @@ func _draw_game() -> void:
 	if combo > 0 and state != "result":
 		var combo_k: float = 1.0 + 0.08 * sin(time * 8.0)
 		text_c("×%d" % combo, Vector2(W / 2, 140), int(34 * combo_k), COLORS[tier], false)
+	if combo_break_t >= 0.0:
+		# outgoing ×N shatters red and drops/shrinks over ~250ms instead of just vanishing
+		var bt: float = combo_break_t / 0.28
+		var b_fade: float = 1.0 - bt
+		var b_drop: float = bt * 46.0
+		var b_scale: float = 1.0 - 0.5 * bt
+		text_c("×%d" % combo_break_n, Vector2(W / 2, 140 + b_drop), int(34 * b_scale), Color("#E63B2E", b_fade), false)
 	if state != "popped":
 		var rr := _shown_r()
 		var squash := 1.0 + sin(state_t / 0.32 * PI) * 0.18 if state == "result" and state_t < 0.32 else 1.0

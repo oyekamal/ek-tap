@@ -183,7 +183,7 @@ func _draw_game() -> void:
 	var py := _lane_y_f(disp_lane)
 	draw_circle(Vector2(W / 2, py), PLAYER_R, Color("#F4D35E"))
 	draw_circle(Vector2(W / 2, py), PLAYER_R * 0.5, ink)
-	text_c("Lane %d / %d" % [mini(lane_idx, lane_n), lane_n], Vector2(W / 2, H * 0.14), 26, ink, false)
+	text_c("Lane %d / %d" % [mini(lane_idx, lane_n), lane_n], Vector2(W / 2, H * 0.205), 26, ink, false)
 
 func _bot(dt: float) -> void:
 	if pending_rebuild:

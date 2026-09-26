@@ -106,9 +106,9 @@ func _tick(dt: float) -> void:
 
 func _draw_stall_backdrop() -> void:
 	var cx := W / 2
-	# awning stripes above the stall
-	var aw_top := H * 0.08
-	var aw_h := H * 0.05
+	# awning stripes above the stall (kept clear of the HUD strip, top ~H*0.16)
+	var aw_top := H * 0.18
+	var aw_h := H * 0.035
 	var stripe_n := 10
 	for i in stripe_n:
 		var x0 := W * (float(i) / stripe_n)
@@ -189,6 +189,9 @@ func _draw_game() -> void:
 	var pcol := Color(ink).lerp(Color.WHITE, price_pulse)
 	var psize := int(64 * pscale)
 	text_c("Rs %d" % int(round(price)), Vector2(cx, H * 0.75), psize, pcol)
+	# faint "lowest possible" price-floor mark, so pushing further is a read not a guess
+	var floor_price := price0 * PRICE_FLOOR_FRAC
+	text_c("floor ~Rs %d" % int(round(floor_price)), Vector2(cx, H * 0.75 + 38.0), 18, Color(ink, 0.4), false)
 
 	if state == "result" and caught:
 		set_xform(Vector2(cx, H * 0.75), -0.18)
