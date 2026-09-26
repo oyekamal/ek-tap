@@ -34,6 +34,16 @@ Built in **Godot 4.7** with no image assets. Every sprite is drawn in code and e
 3. **Skill pass.** The 9 specs went through the skill. Anything that needed a second input was cut. Each game has a readable failure (a freeze on the cause within about 1 s), no jargon, instant restart and a real risk/reward choice every round.
 4. **Build + critic loop.** Builder agents wrote each game against a shared `MiniGame` base. Fresh critic agents then judged real autoplay footage and named each game's biggest gap. Games were fixed and re-judged.
 
+## Ads, updates and the store listing
+
+- **Ads (AdMob, via the [Poing Godot AdMob plugin](https://github.com/poingstudios/godot-admob-plugin) v5.1.0):** a banner on the game picker only, never during play. An interstitial can appear only at a natural break (Again / Games after a game over), at most every 3rd game over, at least 90 s apart, and never in the first 2 minutes. An opt-in **"One more life"** rewarded ad on the game-over card continues the run once. Only G-rated ads, with Google's consent form (UMP) where required. All tunables are at the top of `core/ads.gd`.
+  **Before publishing:** replace the Google *test* ad unit IDs in `core/ads.gd`, and set `admob/general/android/app_id` in Project Settings to your AdMob app ID.
+- **Update button:** `core/updater.gd` checks the latest GitHub release at most every 6 hours. If it's newer than `application/config/version`, the menu shows "New version X is ready. Tap to update", which opens the APK download. Set `STORE_URL` to point it at Google Play instead.
+- **Store listing (ASO):** `store/listing.md` has the title, short and full description, an Urdu localisation, the category and a policy checklist. `store/keywords.md` has the competitor and keyword research. Graphics: `store/screenshots/` (8 × 1080×1920 with captions), `store/feature_graphic.png` (1024×500), `store/icon_512.png`.
+- **Privacy policy:** [PRIVACY.md](PRIVACY.md). Play requires one for apps with ads.
+
+<p align="center"><img src="store/feature_graphic.png" width="600" alt="Feature graphic"></p>
+
 ## Project layout
 
 ```
@@ -55,11 +65,20 @@ godot --path . -- --game=kite_cutter              # jump straight into a game
 godot --path . -- --game=kite_cutter --autoplay   # watch the bot play it
 ```
 
-Build the Android APK (needs the Android SDK, JDK 17 and Godot 4.7.2 export templates):
+Build for Android (needs the Android SDK, the NDK `29.0.14206865`, JDK 17 and Godot 4.7.2 export templates). AdMob needs Godot's Gradle build, so install the build template on the first export:
 
 ```bash
-godot --headless --path . --export-debug "Android" build/ek-tap.apk
+godot --headless --path . --install-android-build-template --export-debug "Android" build/ek-tap.apk
 adb install -r build/ek-tap.apk
+```
+
+Release builds are signed with an upload key that is read from environment variables and never committed:
+
+```bash
+export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=~/.android/keystores/ektap-upload.jks
+export GODOT_ANDROID_KEYSTORE_RELEASE_USER=ektap
+export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=...
+godot --headless --path . --export-release "Android" build/ek-tap.apk
 ```
 
 The APK contains arm64 (phones) and x86_64 (emulators). Tested on the Android emulator with the Vulkan mobile renderer. Devices without Vulkan fall back to OpenGL ES 3. A very weak GPU (for example the emulator's software-only SwiftShader OpenGL mode) can fail to compile Godot's 2D shader and show a blank screen.
@@ -68,6 +87,7 @@ The APK contains arm64 (phones) and x86_64 (emulators). Tested on the Android em
 
 - All 12 games run without script errors in headless autoplay and reach game over.
 - Bests are saved per game on the device.
+- Ads and the rewarded continue were tested on the Android emulator with Google test ads.
 - Not yet: a daily-seed mode, the online multiplayer from the web version of Rope Race, and real-phone playtests.
 
 MIT licensed. Fonts: Lilita One and Atkinson Hyperlegible (SIL Open Font License).

@@ -4,6 +4,7 @@ extends CanvasLayer
 
 signal again_pressed
 signal menu_pressed
+signal revive_pressed
 
 const BIG := preload("res://fonts/LilitaOne-Regular.ttf")
 const BODY := preload("res://fonts/AtkinsonHyperlegible-Bold.ttf")
@@ -17,6 +18,7 @@ var _over_title: Label
 var _over_score: Label
 var _over_note: Label
 var _again: Button
+var _revive: Button
 
 func _ready() -> void:
 	var root := Control.new()
@@ -95,6 +97,12 @@ func _ready() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 20)
 	v.add_child(row)
+	_revive = _button("▶  One more life", false)
+	_revive.add_theme_stylebox_override("normal", _pill(Color("#1FB36B")))
+	for st in ["hover", "pressed", "focus"]:
+		_revive.add_theme_stylebox_override(st, _pill(Color("#1FB36B")))
+	_revive.pressed.connect(func(): revive_pressed.emit())
+	v.add_child(_revive)
 	_again = _button("Again", false)
 	_again.pressed.connect(func(): again_pressed.emit())
 	row.add_child(_again)
@@ -153,8 +161,20 @@ func show_over(g: MiniGame, heading: String, old_best: float) -> void:
 		_over_note.text = "Tied your best."
 	else:
 		_over_note.text = "%s short of your best (%s)." % [g.fmt(absf(old_best - g.score)), g.fmt(old_best)]
+	_revive.visible = g.can_revive()
 	_over.show()
 	_again.grab_focus()
+
+func resume(g: MiniGame) -> void:
+	_over.hide()
+	_hint.hide()
+	refresh(g)
+
+func _pill(c: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = c
+	s.set_corner_radius_all(42)
+	return s
 
 func _label(t: String, f: Font, size: int, color := Color.WHITE) -> Label:
 	var l := Label.new()

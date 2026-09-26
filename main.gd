@@ -33,6 +33,9 @@ func _ready() -> void:
 			"bg": g.bg, "ink": g.ink, "accent": g.accent, "fmt": g.score_fmt})
 		g.free()
 	_build_menu()
+	Updater.update_available.connect(func(_v, _u):
+		if _game == null:
+			_build_menu())
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--game-path="):   # any game file, registered or not (testing)
 			_open(a.trim_prefix("--game-path="))
@@ -50,6 +53,7 @@ func _notification(what: int) -> void:
 			get_tree().quit()
 
 func _open(path: String) -> void:
+	Ads.hide_banner()
 	_menu.hide()
 	_game = load(path).new()
 	_game.quit_to_menu.connect(_close)
@@ -82,7 +86,7 @@ func _build_menu() -> void:
 	for side in ["left", "right"]:
 		margin.add_theme_constant_override("margin_" + side, 32)
 	margin.add_theme_constant_override("margin_top", 72)
-	margin.add_theme_constant_override("margin_bottom", 48)
+	margin.add_theme_constant_override("margin_bottom", 200)   # room for the menu banner ad
 	scroll.add_child(margin)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 28)
@@ -100,6 +104,9 @@ func _build_menu() -> void:
 	sub.add_theme_font_size_override("font_size", 32)
 	sub.add_theme_color_override("font_color", Color("#9FB3AE"))
 	col.add_child(sub)
+	if Updater.latest != "":
+		col.add_child(_update_button())
+	Ads.show_banner()
 
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -155,4 +162,21 @@ func _card(i: Dictionary) -> Button:
 	bl.add_theme_color_override("font_color", i.accent)
 	bl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(bl)
+	return b
+
+func _update_button() -> Button:
+	var b := Button.new()
+	b.text = "New version %s is ready. Tap to update" % Updater.latest
+	b.custom_minimum_size = Vector2(0, 96)
+	b.add_theme_font_override("font", BODY)
+	b.add_theme_font_size_override("font_size", 30)
+	b.add_theme_color_override("font_color", Color("#05331C"))
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color("#1FB36B")
+	s.set_corner_radius_all(48)
+	for st in ["normal", "hover", "pressed", "focus"]:
+		b.add_theme_stylebox_override(st, s)
+	for c in ["font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(c, Color("#05331C"))
+	b.pressed.connect(Updater.open)
 	return b

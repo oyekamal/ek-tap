@@ -1,19 +1,29 @@
 ; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
 
 config/name="Ek Tap"
 config/description="12 one-button games."
+config/version="1.1.0"
 run/main_scene="res://main.tscn"
+config/quit_on_go_back=false
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.png"
-config/quit_on_go_back=false
 
 [autoload]
 
 Save="*res://core/save.gd"
 Sfx="*res://core/sfx.gd"
+Ads="*res://core/ads.gd"
+Updater="*res://core/updater.gd"
 
 [display]
 
@@ -24,6 +34,10 @@ window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/admob/plugin.cfg")
 
 [gui]
 

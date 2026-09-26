@@ -25,6 +25,7 @@ func _tick(_dt: float) -> void: pass        ## game logic; dt is 0 during hit-st
 func _draw_game() -> void: pass             ## draw the world (W x H, origin top-left)
 func _on_press() -> void: pass              ## finger down / Space down
 func _on_release() -> void: pass            ## finger up / Space up
+func _on_revive() -> void: pass             ## rewarded continue: the run resumes with 1 life
 func _bot(dt: float) -> void: _default_bot(dt)  ## autoplay for headless testing
 
 # ---------- state a game can read ----------
@@ -35,6 +36,7 @@ var lives := 3
 var holding := false
 var running := false              ## false while the game-over panel is up
 var started := false              ## true after the first press of a run
+var revived := false              ## one rewarded continue per run
 var time := 0.0                   ## seconds of play this run (frozen during hit-stop)
 var rng := RandomNumberGenerator.new()
 var font_big: Font = preload("res://fonts/LilitaOne-Regular.ttf")
@@ -58,8 +60,14 @@ func _ready() -> void:
 	_autoplay = "--autoplay" in OS.get_cmdline_user_args() or "--autoplay" in OS.get_cmdline_args()
 	_hud = Hud.new()
 	add_child(_hud)
-	_hud.again_pressed.connect(start_run)
-	_hud.menu_pressed.connect(func(): quit_to_menu.emit())
+	# after a game-over, Again / Games is a natural break: the ad manager may show an interstitial first
+	_hud.again_pressed.connect(func(): Ads.game_over_break(start_run))
+	_hud.menu_pressed.connect(func():
+		if running:
+			quit_to_menu.emit()
+		else:
+			Ads.game_over_break(func(): quit_to_menu.emit()))
+	_hud.revive_pressed.connect(func(): Ads.show_reward(revive, func(): pass))
 	get_viewport().size_changed.connect(_on_resize)
 	_on_resize()
 	start_run()
@@ -76,6 +84,7 @@ func start_run() -> void:
 	lives = max_lives
 	time = 0.0
 	started = false
+	revived = false
 	running = true
 	holding = false
 	_touches.clear()
@@ -114,6 +123,21 @@ func end_run(heading := "") -> void:
 	get_tree().create_timer(OVER_DELAY).timeout.connect(func():
 		if run == _run_id and not running:
 			_hud.show_over(self, heading, old))
+
+## A rewarded continue is possible: lives-based game, not used yet this run, and an ad is loaded.
+func can_revive() -> bool:
+	return use_lives and not revived and Ads.reward_ready()
+
+## Continue the run after a rewarded ad: keep the score, one life left.
+func revive() -> void:
+	revived = true
+	_run_id += 1          # cancels a pending game-over card
+	lives = 1
+	holding = false
+	_touches.clear()
+	running = true
+	_hud.resume(self)
+	_on_revive()
 
 func shake(amount: float) -> void:
 	_trauma = clampf(maxf(_trauma, amount), 0.0, 1.0)
@@ -205,7 +229,10 @@ func _process(delta: float) -> void:
 		_bot_t += delta
 		if _bot_t > OVER_DELAY + 1.2:
 			_bot_t = 0.0
-			start_run()
+			if "--test-revive" in OS.get_cmdline_user_args() and use_lives and not revived:
+				revive()   # exercises the rewarded-continue path headless
+			else:
+				start_run()
 	for p in _parts:
 		p.t += delta
 		p.v *= 0.96
