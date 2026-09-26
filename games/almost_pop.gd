@@ -132,11 +132,17 @@ func _draw_game() -> void:
 		var col := Color("#FF5A4E") if hot else INK
 		draw_line(c + d * ring_r, c + d * (ring_r + 22), col, 6.0 if hot else 4.0, true)
 		draw_circle(c + d * (ring_r + 26), 9.0 if hot else 7.0, col)
-	# faint perfect band (96-100%)
-	draw_arc(c, ring_r * (1.0 + PERFECT) / 2.0, 0, TAU, 96, Color(INK, 0.12), ring_r * (1.0 - PERFECT))
+	# perfect band (96-100%) — bright enough to read as a skill-ceiling zone while inflating,
+	# not just inferable after the fact from the result grade
+	draw_arc(c, ring_r * (1.0 + PERFECT) / 2.0, 0, TAU, 96, Color(accent, 0.4), ring_r * (1.0 - PERFECT))
+	# persistent combo readout: visible the whole time a PERFECT streak is live, not just the
+	# ~0.8s flash in the result popup, so a player mid-streak can see they're building one
+	if combo > 0 and state != "result":
+		var combo_k: float = 1.0 + 0.08 * sin(time * 8.0)
+		text_c("×%d" % combo, Vector2(W / 2, 140), int(34 * combo_k), COLORS[tier], false)
 	if state != "popped":
 		var rr := _shown_r()
-		var squash := 1.0 + sin(state_t / 0.25 * PI) * 0.08 if state == "result" and state_t < 0.25 else 1.0
+		var squash := 1.0 + sin(state_t / 0.32 * PI) * 0.18 if state == "result" and state_t < 0.32 else 1.0
 		var bc := c + Vector2(0, fly_y)
 		# string
 		var pts := PackedVector2Array()

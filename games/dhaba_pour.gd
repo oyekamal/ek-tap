@@ -54,7 +54,10 @@ func _init() -> void:
 	hint = "Hold to pour. Stop at the line."
 
 func _unit() -> float:
-	return minf(W / 720.0, H / 1280.0)
+	# Matches the ported HTML original's reference resolution (400x800 phone),
+	# NOT the app's own 720x1280 base — using the app base here was the scale bug
+	# that shrank the whole scene to ~56% (dhaba-pour/index.html:163).
+	return minf(W / 400.0, H / 800.0)
 
 func _counter_y() -> float:
 	return H * 0.78
