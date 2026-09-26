@@ -1,0 +1,39 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="Ek Tap"
+config/description="12 one-button games."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://icon.png"
+config/quit_on_go_back=false
+
+[autoload]
+
+Save="*res://core/save.gd"
+Sfx="*res://core/sfx.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/window_width_override=405
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[gui]
+
+theme/custom_font="res://fonts/AtkinsonHyperlegible-Bold.ttf"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
