@@ -104,36 +104,91 @@ func _tick(dt: float) -> void:
 		suspicion = maxf(0.0, suspicion - DECAY_RATE * dt)
 	price_pulse = maxf(0.0, price_pulse - dt * 6.0)
 
-func _draw_game() -> void:
+func _draw_stall_backdrop() -> void:
 	var cx := W / 2
+	# awning stripes above the stall
+	var aw_top := H * 0.08
+	var aw_h := H * 0.05
+	var stripe_n := 10
+	for i in stripe_n:
+		var x0 := W * (float(i) / stripe_n)
+		var x1 := W * (float(i + 1) / stripe_n)
+		var col := Color("#C9342B") if i % 2 == 0 else Color("#F2E4C6")
+		draw_rect(Rect2(x0, aw_top, x1 - x0, aw_h), col)
+	draw_line(Vector2(0, aw_top + aw_h), Vector2(W, aw_top + aw_h), ink, 3.0)
+	# hanging goods: little dangling shapes from the awning, swaying gently
+	for i in 5:
+		var hx := W * (0.12 + 0.19 * i)
+		var sway := sin(time * 1.6 + float(i) * 1.3) * 6.0
+		var hy0 := aw_top + aw_h
+		var hy1 := hy0 + 34.0
+		draw_line(Vector2(hx, hy0), Vector2(hx + sway, hy1), Color("#7A4A1E"), 3.0)
+		draw_circle(Vector2(hx + sway, hy1 + 10.0), 12.0, Color("#C97A2B").lerp(Color("#8A5A2B"), float(i % 3) / 2.0))
+	# stall counter
 	draw_rect(Rect2(W * 0.1, H * 0.62, W * 0.8, H * 0.06), Color("#7A4A1E"))
 	draw_rect(Rect2(W * 0.1, H * 0.62, W * 0.8, H * 0.06), ink, false, 3.0)
 
+func _draw_shopkeeper(sk: Vector2, sfrac: float) -> void:
+	# suspicion 0..1 drives lean-in, redder face tint, eyebrows and sweat.
+	var lean := sfrac * 14.0
+	var body_col := Color("#3A1F0B").lerp(Color("#8A1810"), clampf(sfrac * 1.3, 0.0, 1.0))
+	var top := sk + Vector2(-30 + lean, 0)
+	var top2 := sk + Vector2(30 + lean, 0)
+	draw_colored_polygon(PackedVector2Array([sk + Vector2(-46, 70), sk + Vector2(46, 70), top2, top]), body_col)
+	var head_c := sk + Vector2(lean * 1.4, -22)
+	draw_circle(head_c, 30.0, body_col)
+	# eyebrows: flat/calm at low suspicion, angled down-in ("frowning/angry") as it rises
+	var brow_angle := sfrac * 0.55
+	draw_line(head_c + Vector2(-20, -8), head_c + Vector2(-4, -8 + 14.0 * brow_angle), Color("#1A0E05"), 4.0)
+	draw_line(head_c + Vector2(20, -8), head_c + Vector2(4, -8 + 14.0 * brow_angle), Color("#1A0E05"), 4.0)
+	# mouth: neutral line -> downturned frown -> angry gritted shape
+	if sfrac < 0.35:
+		draw_line(head_c + Vector2(-10, 14), head_c + Vector2(10, 14), Color("#1A0E05"), 3.0)
+	elif sfrac < 0.7:
+		var midw := head_c + Vector2(0, 18 + 6.0 * (sfrac - 0.35) / 0.35)
+		draw_line(head_c + Vector2(-11, 12), midw, Color("#1A0E05"), 3.0)
+		draw_line(midw, head_c + Vector2(11, 12), Color("#1A0E05"), 3.0)
+	else:
+		draw_rect(Rect2(head_c.x - 12, head_c.y + 10, 24, 8), Color("#1A0E05"))
+	# sweat drop once suspicion is clearly rising
+	if sfrac > 0.5:
+		var drop_t := fmod(time * 2.2, 1.0)
+		var dy := head_c.y - 6 + drop_t * 30.0
+		draw_circle(Vector2(head_c.x + 26, dy), 5.0 * (1.0 - drop_t * 0.4), Color("#8FD3FF", 0.85))
+
+func _draw_game() -> void:
+	var cx := W / 2
+	_draw_stall_backdrop()
+
 	var fill := 0.4 if price0 <= 0.0 else price / price0
-	var gr := 46.0 + 28.0 * fill
+	var gr := 34.0 + 52.0 * fill
 	draw_circle(Vector2(cx, H * 0.60), gr, GOOD_COLOR)
 	draw_circle(Vector2(cx, H * 0.60 - gr * 0.5), gr * 0.35, Color("#8A5A2B"))
 
-	var sk := Vector2(cx, H * 0.44)
-	draw_colored_polygon(PackedVector2Array([sk + Vector2(-46, 70), sk + Vector2(46, 70), sk + Vector2(30, 0), sk + Vector2(-30, 0)]), ink)
-	draw_circle(sk + Vector2(0, -22), 30.0, ink)
+	var sfrac := suspicion / 100.0
+	_draw_shopkeeper(Vector2(cx, H * 0.44), sfrac)
 
 	var bar := Rect2(W * 0.18, H * 0.28, W * 0.64, 26.0)
 	draw_rect(bar, BAR_BG)
-	var sfrac := suspicion / 100.0
 	var scol := Color("#3FBE5E").lerp(Color("#E63B2E"), sfrac)
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * sfrac, bar.size.y)), scol)
 	draw_rect(bar, ink, false, 3.0)
 	text_c("suspicion", Vector2(cx, bar.position.y - 32.0), 22, ink, false)
 
-	var pulse := 1.0 + (0.12 * sin(ring_t / RING_INTERVAL * PI)) if state == "haggling" else 1.0
-	set_xform(Vector2(W * 0.85, H * 0.5), 0.0, Vector2(pulse, pulse))
+	# bell swings on every ring (angle kick decaying from ring_t) instead of a uniform pulse
+	var ring_phase := ring_t / RING_INTERVAL
+	var swing := sin(ring_phase * PI) * 0.5 if state == "haggling" else 0.0
+	var pulse := 1.0 + (0.35 * sin(ring_phase * PI)) if state == "haggling" else 1.0
+	set_xform(Vector2(W * 0.85, H * 0.5), swing, Vector2(pulse, pulse))
 	draw_circle(Vector2.ZERO, 26.0, Color("#B8860B"))
 	draw_circle(Vector2(0, -18), 6.0, Color("#B8860B"))
 	set_xform()
 
-	var psize := 64 + int(10.0 * price_pulse)
-	text_c("Rs %d" % int(round(price)), Vector2(cx, H * 0.75), psize, ink)
+	# price tag: shrinks + flashes white on every ring instead of staying a static number
+	var pscale := 1.0 + 0.3 * price_pulse
+	var pcol := Color(ink).lerp(Color.WHITE, price_pulse)
+	var psize := int(64 * pscale)
+	text_c("Rs %d" % int(round(price)), Vector2(cx, H * 0.75), psize, pcol)
 
 	if state == "result" and caught:
 		set_xform(Vector2(cx, H * 0.75), -0.18)

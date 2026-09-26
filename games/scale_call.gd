@@ -197,15 +197,37 @@ func _draw_game() -> void:
 	_pan(l_pan, Color(INK, 0.9))
 	_pan(r_pan, BRASS)
 
-	# reference weight on the left pan
-	draw_rect(Rect2(l_pan.x - 16.0, l_pan.y - 24.0, 32.0, 24.0), Color(INK, 0.85))
-	# goods pile on the right pan, height grows with weight held
-	var pile_h: float = clampf(weight_held / 3.0, 0.0, 90.0)
-	if pile_h > 1.0:
-		draw_rect(Rect2(r_pan.x - 34.0, r_pan.y - pile_h, 68.0, pile_h), Color("#C97B3A"))
+	# reference weight on the left pan: a fixed sack shape so it doesn't read as
+	# the same rectangle as the goods pile (distinguishable by shape, not just colour)
+	var ref_top := l_pan.y - 34.0
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(l_pan.x - 18.0, l_pan.y), Vector2(l_pan.x + 18.0, l_pan.y),
+		Vector2(l_pan.x + 13.0, ref_top + 8.0), Vector2(l_pan.x + 7.0, ref_top),
+		Vector2(l_pan.x - 7.0, ref_top), Vector2(l_pan.x - 13.0, ref_top + 8.0)
+	]), Color(INK, 0.85))
+
+	# goods pile on the right pan: stacked discrete items whose COUNT and SHAPE
+	# grow with weight, not just a rectangle's height, so silhouette visibly changes.
+	var n_items: int = clampi(int(weight_held / 14.0), 0, 8)
+	if n_items > 0:
+		var base_y := r_pan.y
+		var item_w := 30.0
+		for i in n_items:
+			# each item a bit smaller and offset as the stack rises, alternating
+			# a sack (rounded) and a crate (square) silhouette for variety
+			var iw: float = item_w - float(i) * 1.6
+			var ih: float = 16.0 + 3.0 * (i % 3)
+			var iy := base_y - ih * 0.5 - float(i) * (ih * 0.78)
+			var ix := r_pan.x + (sin(float(i) * 2.4) * 5.0 if i > 0 else 0.0)
+			var col := Color("#C97B3A") if i % 2 == 0 else Color("#B5652A")
+			if i % 2 == 0:
+				draw_rect(Rect2(ix - iw * 0.5, iy - ih * 0.5, iw, ih), col)
+			else:
+				draw_circle(Vector2(ix, iy), iw * 0.42, col)
+		var top_y: float = base_y - float(n_items) * (18.0 * 0.78) - 10.0
 		if round_i >= VARIANCE_ROUND and state == "filling":
 			var shimmer: float = 0.5 + 0.5 * sin(time * 30.0)
-			draw_rect(Rect2(r_pan.x - 34.0, r_pan.y - pile_h, 68.0, 6.0), Color(1, 1, 1, 0.25 * shimmer))
+			draw_rect(Rect2(r_pan.x - 16.0, top_y, 32.0, 5.0), Color(1, 1, 1, 0.3 * shimmer))
 
 func _bot(dt: float) -> void:
 	match state:
