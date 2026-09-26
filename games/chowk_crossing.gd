@@ -14,7 +14,8 @@ const CHUNK_SPEED := [90.0, 150.0, 190.0, 170.0, 40.0, 120.0]
 const CHUNK_VEHW := [70.0, 70.0, 34.0, 30.0, 90.0, 60.0]
 const CHUNK_COUNT := [1, 1, 2, 2, 1, 2]
 const CHUNK_GAPMULT := [1.6, 1.1, 1.3, 0.8, 3.0, 1.0]
-const CHUNK_COLOR := [Color("#3FA34D"), Color("#E0B93C"), Color("#8FA9C9"), Color("#6E86A8"), Color("#8A6A46"), Color("#E0B93C")]
+const CHUNK_COLOR := [Color("#3FA34D"), Color("#E0B93C"), Color("#8FA9C9"), Color("#6E86A8"), Color("#8A6A46"), Color("#C2578A")]
+const BOT_LOOKAHEAD := 0.32   # s: roughly how long a step + recovery takes to clear a lane
 
 var lane_n := START_LANES
 var crossing_i := 0
@@ -115,8 +116,8 @@ func _hit(i: int) -> void:
 	shake(0.8)
 	flash_lane = i
 	flash_t = 0.4
-	popup("HIT!", "honk!", Vector2(W / 2, _lane_y(lane_idx) - 60.0))
-	burst(Vector2(W / 2, _lane_y(lane_idx)), Color("#E63B2E"), 26, 0.9)
+	popup("HIT!", "honk!", Vector2(W / 2, _lane_y(lane_idx) - 100.0))
+	burst(Vector2(W / 2, _lane_y(lane_idx) - 20.0), Color("#E63B2E"), 26, 0.9)
 	var ended := lose_life()
 	if not ended:
 		lane_idx = 0
@@ -183,3 +184,21 @@ func _draw_game() -> void:
 	draw_circle(Vector2(W / 2, py), PLAYER_R, Color("#F4D35E"))
 	draw_circle(Vector2(W / 2, py), PLAYER_R * 0.5, ink)
 	text_c("Lane %d / %d" % [mini(lane_idx, lane_n), lane_n], Vector2(W / 2, H * 0.14), 26, ink, false)
+
+func _bot(dt: float) -> void:
+	if pending_rebuild:
+		return
+	if holding:
+		_release()   # lift the finger right after the tap, like a real player
+		return
+	if recover_t > 0.0:
+		return
+	if lane_idx >= lane_n:
+		_press()   # final step onto the far kerb is always safe
+		return
+	# read the lane the next step would land in and wait for a gap before dashing
+	var safe: bool = not _in_danger(lane_idx, elapsed + BOT_LOOKAHEAD)
+	if safe and rng.randf() < 0.92:
+		_press()
+	elif not safe and rng.randf() < 0.05:
+		_press()   # occasional mistimed dash -- keeps failures plausible

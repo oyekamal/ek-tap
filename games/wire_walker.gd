@@ -10,9 +10,10 @@ const GUST_MIN := 0.30            # wind push magnitude range
 const GUST_MAX := 0.48
 const GUST_INTERVAL_START := 3.6  # seconds between gusts at the start of a walk
 const GUST_INTERVAL_MIN := 1.7    # seconds between gusts once ramped up
-const GUST_RAMP_METRES := 55.0    # metres walked to reach the fastest gust rate
+const GUST_RAMP_METRES := 90.0    # metres walked to reach the fastest gust rate
 const WALK_SPEED := 2.4           # metres/second while alive
 const NO_FAIL_TIME := 10.0        # seconds of practice where a fall can't happen
+const PRACTICE_RAMP_TIME := 4.0   # seconds after practice ends before fail-tolerance is at full tightness
 const MAX_TILT := 0.5             # radians the walker tilts at full lean
 const WIRE_Y_F := 0.46            # wire height, fraction of H
 
@@ -79,19 +80,24 @@ func _tick(dt: float) -> void:
 		gust_t = gust_interval * rng.randf_range(0.85, 1.2)
 	lean += (wind + pole_dir * POLE_ACCEL) * dt
 	var practicing: bool = time < NO_FAIL_TIME
-	if practicing:
-		lean = clampf(lean, -LEAN_CAP * 0.85, LEAN_CAP * 0.85)
-	else:
-		lean = clampf(lean, -LEAN_CAP * 1.08, LEAN_CAP * 1.08)
+	# taper practice->live instead of an instant cliff: right when practice ends the
+	# clamp is still loose and the fail threshold still forgiving, both tightening over
+	# PRACTICE_RAMP_TIME so a lean built up safely during practice doesn't insta-kill.
+	var ramp: float = 0.0 if practicing else clampf((time - NO_FAIL_TIME) / PRACTICE_RAMP_TIME, 0.0, 1.0)
+	var clamp_bound: float = LEAN_CAP * 0.85 if practicing else lerpf(LEAN_CAP * 0.9, LEAN_CAP * 1.08, ramp)
+	lean = clampf(lean, -clamp_bound, clamp_bound)
 	add_score(WALK_SPEED * dt)
-	if not practicing and absf(lean) >= LEAN_CAP:
-		_fall()
+	if not practicing:
+		var fail_threshold: float = lerpf(LEAN_CAP * 1.15, LEAN_CAP, ramp)
+		if absf(lean) >= fail_threshold:
+			_fall()
 
 func _fall() -> void:
 	Sfx.tone(130.0, 0.35, "saw", 0.5, 40.0)
 	hitstop(100)
 	shake(0.9)
-	popup("FELL", "%d m" % int(score), Vector2(W / 2.0, H * 0.32), DANGER)
+	var dir_txt := "gust from the right" if wind > 0.0 else "gust from the left"
+	popup("FELL", "%d m -- %s" % [int(score), dir_txt], Vector2(W / 2.0, H * 0.32), DANGER)
 	burst(Vector2(W / 2.0, H * WIRE_Y_F), CORAL, 22, 0.7)
 	lose_life()
 
@@ -116,9 +122,18 @@ func _draw_game() -> void:
 				var lit: bool = fmod(float(absi(ci) * 7 + wx * 3 + wy * 5), 3.0) < 1.4
 				var wcol := WINDOW_LIT if lit else WINDOW_DARK
 				draw_rect(Rect2(bx + 10.0 * u + wx * 20.0 * u, H - bh + 14.0 * u + wy * 26.0 * u, 12.0 * u, 16.0 * u), wcol)
+	# darken the bottom band the hint label sits over -- lit windows behind it wash out
+	# the white "Tap to flip..." text otherwise
+	if not started:
+		draw_rect(Rect2(0, H - 150.0 * u, W, 150.0 * u), Color(0, 0, 0, 0.38))
+
 	# the wire
 	draw_line(Vector2(0, wire_y), Vector2(W, wire_y), WIRE_COL, 4.0 * u, true)
 	draw_line(Vector2(0, wire_y - 2.0 * u), Vector2(W, wire_y - 2.0 * u), Color(WIRE_COL, 0.4), 1.5 * u, true)
+
+	var practicing: bool = time < NO_FAIL_TIME
+	var helps: bool = _tap_helps()
+	var tell_strength: float = 1.0 if practicing else 0.5   # readable always, subtler once live
 
 	# lean gauge: always visible, with point-of-no-return marks at both ends
 	var gx := W / 2.0
@@ -127,7 +142,8 @@ func _draw_game() -> void:
 	draw_rect(Rect2(gx - gw / 2.0, gy - 8.0 * u, gw, 16.0 * u), GAUGE_BG)
 	draw_rect(Rect2(gx - 6.0 * u, gy - 8.0 * u, 12.0 * u, 16.0 * u), Color(ink, 0.35))
 	var fx: float = clampf(lean / LEAN_CAP, -1.0, 1.0) * (gw / 2.0)
-	draw_circle(Vector2(gx + fx, gy), 9.0 * u, GAUGE_FILL)
+	var dot_col: Color = GAUGE_FILL.lerp(GOLD, tell_strength) if helps else GAUGE_FILL
+	draw_circle(Vector2(gx + fx, gy), 9.0 * u, dot_col)
 	draw_rect(Rect2(gx - gw / 2.0 - 4.0 * u, gy - 12.0 * u, 6.0 * u, 24.0 * u), DANGER)
 	draw_rect(Rect2(gx + gw / 2.0 - 2.0 * u, gy - 12.0 * u, 6.0 * u, 24.0 * u), DANGER)
 
@@ -138,14 +154,12 @@ func _draw_game() -> void:
 	draw_circle(Vector2(0, -70.0 * u), 13.0 * u, CORAL)
 	draw_line(Vector2(-6.0 * u, -18.0 * u), Vector2(-10.0 * u, 6.0 * u), CORAL, 6.0 * u, true)
 	draw_line(Vector2(6.0 * u, -18.0 * u), Vector2(10.0 * u, 6.0 * u), CORAL, 6.0 * u, true)
-	var practicing: bool = time < NO_FAIL_TIME
-	var glow: bool = practicing and _tap_helps()
 	var pole_col := ink
 	var pole_w := 5.0 * u
-	if glow:
+	if helps:
 		var pulse: float = 0.6 + 0.4 * sin(_pulse_t * 12.0)
-		pole_col = GOLD
-		pole_w = (5.0 + 3.0 * pulse) * u
+		pole_col = ink.lerp(GOLD, tell_strength)
+		pole_w = (5.0 + 3.0 * pulse * tell_strength) * u
 	var pole_ang: float = -tilt * 1.6
 	var dx: float = cos(pole_ang) * 110.0 * u
 	var dy: float = sin(pole_ang) * 110.0 * u

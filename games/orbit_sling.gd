@@ -9,7 +9,8 @@ const ORBIT_ACCEL := 3.4          # angular acceleration while held, rad/s^2
 const MAX_SPEED := 14.0           # angular speed cap, rad/s
 const TANGENT_SCALE := 1.0
 const FLIGHT_MAX_T := 1.6         # seconds before a flying stone counts as lost
-const CAPTURE_R := 54.0
+const CAPTURE_R := 92.0           # generous capture zone (~2x PLANET_R) so a decent aim lands
+const AIM_SNAP_DEG := 16.0        # release forgiveness cone: nudges a near-miss straight onto the target
 const LEAD_CHAIN := 4             # planets start drifting from this chain on
 const DRIFT_R := 40.0
 const DRIFT_SPEED := 1.4
@@ -35,6 +36,7 @@ var stone_vel := Vector2.ZERO
 var tangent_dir := Vector2.RIGHT
 var hold_t := 0.0
 var miss_pos := Vector2.ZERO
+var flight_min_dist := 1.0e6
 
 var stars := []
 
@@ -98,9 +100,17 @@ func _on_release() -> void:
 func _launch() -> void:
 	Sfx.loop_stop()
 	var speed := stone_speed * R_ORBIT * TANGENT_SCALE
-	stone_vel = tangent_dir * speed
+	var launch_dir := tangent_dir
+	var to_target := target_pos - stone_pos
+	if to_target.length() > 1.0:
+		var ideal := to_target.normalized()
+		var ang := rad_to_deg(acos(clampf(tangent_dir.dot(ideal), -1.0, 1.0)))
+		if ang < AIM_SNAP_DEG:
+			launch_dir = ideal   # release forgiveness: a near-enough aim snaps true
+	stone_vel = launch_dir * speed
 	state = "flying"
 	state_t = 0.0
+	flight_min_dist = 1.0e6
 	Sfx.tone(300.0 + minf(stone_speed, 12.0) * 40.0, 0.12)
 
 func _update_target_drift(dt: float) -> void:
@@ -125,6 +135,7 @@ func _tick(dt: float) -> void:
 			state_t += dt
 			stone_pos += stone_vel * dt
 			_update_target_drift(dt)
+			flight_min_dist = minf(flight_min_dist, stone_pos.distance_to(target_pos))
 			if stone_pos.distance_to(target_pos) < CAPTURE_R:
 				_captured()
 			elif state_t > FLIGHT_MAX_T or stone_pos.x < -80.0 or stone_pos.x > W + 80.0 or stone_pos.y < -80.0 or stone_pos.y > H + 80.0:
@@ -153,7 +164,8 @@ func _lost() -> void:
 	hitstop(90)
 	shake(0.6)
 	miss_pos = stone_pos
-	popup("MISSED", "flew past the next planet", Vector2(W / 2.0, H * 0.25), Color("#FF5E7A"))
+	var sub := "so close! %dpx off" % int(flight_min_dist - CAPTURE_R) if flight_min_dist < CAPTURE_R * 1.6 else "flew past the next planet"
+	popup("MISSED", sub, Vector2(W / 2.0, H * 0.25), Color("#FF5E7A"))
 	state = "lost"
 	state_t = 0.0
 	chain = 0
@@ -164,6 +176,7 @@ func _draw_game() -> void:
 		draw_circle(s, 1.6, Color(INK, 0.35))
 
 	var t_r := PLANET_R * 0.8
+	draw_arc(target_pos, CAPTURE_R, 0.0, TAU, 40, Color(target_col, 0.28), 3.0)
 	draw_circle(target_pos, t_r, Color(target_col, 0.35))
 	draw_circle(target_pos, t_r * 0.55, target_col)
 	if chain >= LEAD_CHAIN:
@@ -193,9 +206,18 @@ func _bot(dt: float) -> void:
 	if not holding:
 		_press()
 		return
-	var to_target := (target_pos - stone_pos).normalized()
-	var aim := tangent_dir.dot(to_target)
-	if aim > 0.82 and stone_speed > 2.0:
-		_release()
-	elif hold_t > duration * rng.randf_range(0.7, 0.98):
+	if stone_speed > 2.0:
+		var to_target := target_pos - stone_pos
+		var dist := to_target.length()
+		if dist > 1.0:
+			var ideal := to_target / dist
+			# perpendicular miss distance if released right now, along the tangent line
+			var cross_dist: float = absf(tangent_dir.x * ideal.y - tangent_dir.y * ideal.x) * dist
+			var dot := tangent_dir.dot(ideal)
+			# usually aim tight enough for a clean capture; occasionally a looser, riskier release
+			var tolerance: float = CAPTURE_R * (0.55 if rng.randf() < 0.85 else 0.25)
+			if dot > 0.0 and cross_dist < tolerance:
+				_release()
+				return
+	if hold_t > duration * rng.randf_range(0.85, 0.99):
 		_release()
