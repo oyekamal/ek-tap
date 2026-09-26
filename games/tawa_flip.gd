@@ -110,11 +110,27 @@ func _land() -> void:
 	if pending_success:
 		state = "landed_good"
 		combo += 1
-		var pts: int = 10 * mini(combo, 5)
+		# the decision: charging higher (waiting for the dial to swing further before
+		# tapping) means a taller, faster, more-rotated flip -- harder to time -- but pays
+		# a bigger multiplier. Landing dead-centre of the zone ("PERFECT") also pays far
+		# more than clipping the edge ("CLEAN"), so a safe low-charge tap that just grazes
+		# the zone edge is a real fallback, not the same payout as a bold, accurate one.
+		var half: float = zone_w / 2.0
+		var dist: float = absf(launch_charge - zone_c)
+		var accuracy: float = 1.0 - clampf(dist / maxf(half, 0.001), 0.0, 1.0)   # 1 = dead centre, 0 = edge
+		var risk_mult: float = 1.0 + 0.6 * (launch_charge / 100.0)              # higher charge = bigger, riskier flip
+		var combo_mult: float = float(mini(combo, 5))
+		var pts: int = int(round(lerpf(4.0, 22.0, accuracy) * combo_mult * risk_mult))
 		add_score(pts)
-		popup("CLEAN" + (" x%d" % combo if combo > 1 else ""), "+%d" % pts, Vector2(W / 2.0, H * PAN_Y_F - 190.0), ink)
-		Sfx.chord([523.0, 659.0, 784.0])
-		burst(Vector2(W / 2.0, H * PAN_Y_F), ROTI, 16, 0.45)
+		var perfect: bool = accuracy > 0.82
+		var grade := "PERFECT" if perfect else "CLEAN"
+		popup(grade + (" x%d" % combo if combo > 1 else ""), "+%d" % pts, Vector2(W / 2.0, H * PAN_Y_F - 190.0), ink)
+		if perfect:
+			Sfx.chord([659.0, 784.0, 988.0])
+			burst(Vector2(W / 2.0, H * PAN_Y_F), Color("#FFE9A8"), 22, 0.6)
+		else:
+			Sfx.chord([523.0, 659.0, 784.0])
+			burst(Vector2(W / 2.0, H * PAN_Y_F), ROTI, 16, 0.45)
 		burst(Vector2(W / 2.0, H * PAN_Y_F - 10.0 * _unit()), FLOUR, 14, 0.3)   # flour puff on landing
 		zone_w = maxf(ZONE_MIN, zone_w * ZONE_SHRINK)
 		charge_period = maxf(CHARGE_PERIOD_MIN, charge_period * CHARGE_SPEEDUP)
@@ -154,7 +170,7 @@ func _draw_game() -> void:
 
 	# charge dial: always visible
 	var gx := W / 2.0
-	var gy := 216.0
+	var gy := H * 0.19   # scaled by H (was a hardcoded 216px) -- keeps clearance from the HUD line
 	var gw := W * 0.58
 	draw_rect(Rect2(gx - gw / 2.0, gy - 9.0 * u, gw, 18.0 * u), DIAL_BG)
 	var zx0: float = gx - gw / 2.0 + gw * (zone_c - zone_w / 2.0) / 100.0

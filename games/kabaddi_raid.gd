@@ -26,6 +26,8 @@ var state := "ready"      # ready | advance | retreat | caught | safe
 var state_t := 0.0
 var safe_depth := 0.0
 var bot_release_depth := 0.0
+var _no_defenders_t := 0.0   # safety valve: forces advance->retreat if the bot (or a human)
+                             # never releases once every defender is tagged
 
 func _init() -> void:
 	game_id = "kabaddi_raid"
@@ -64,7 +66,10 @@ func _begin_raid() -> void:
 	raid_score = 0
 	state = "advance"
 	state_t = 0.0
-	bot_release_depth = depth_max * (1.05 if rng.randf() < 0.25 else rng.randf_range(0.3, 0.9))
+	_no_defenders_t = 0.0
+	# always a reachable depth (depth is clamped to depth_max, so a target >= depth_max
+	# would never trigger the bot's release check -- that was the soft-lock).
+	bot_release_depth = depth_max * (0.98 if rng.randf() < 0.25 else rng.randf_range(0.3, 0.9))
 	Sfx.loop_start("tri", 180.0, 0.18)
 
 func _on_press() -> void:
@@ -140,7 +145,19 @@ func _tick(dt: float) -> void:
 				_tag_nearest()
 			_close_defenders(dt)
 			Sfx.loop_pitch(0.9 + (depth / depth_max) * 1.4)
-			_check_caught()
+			if _check_caught():
+				return
+			# fallback: once every defender is tagged and the raider has reached max
+			# depth, force the sprint home after a short beat -- guarantees the state
+			# always advances even if a release is never triggered.
+			if defender_gaps.is_empty() and depth >= depth_max:
+				_no_defenders_t += dt
+				if _no_defenders_t > 0.4:
+					state = "retreat"
+					state_t = 0.0
+					Sfx.loop_pitch(1.4)
+			else:
+				_no_defenders_t = 0.0
 		"retreat":
 			depth = maxf(0.0, depth - RETREAT_SPEED * dt)
 			_close_defenders(dt)

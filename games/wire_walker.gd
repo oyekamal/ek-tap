@@ -137,7 +137,7 @@ func _draw_game() -> void:
 
 	# lean gauge: always visible, with point-of-no-return marks at both ends
 	var gx := W / 2.0
-	var gy := 216.0
+	var gy := H * 0.19   # scaled by H (was a hardcoded 216px) -- keeps clearance below the HUD subtitle
 	var gw := W * 0.56
 	draw_rect(Rect2(gx - gw / 2.0, gy - 8.0 * u, gw, 16.0 * u), GAUGE_BG)
 	draw_rect(Rect2(gx - 6.0 * u, gy - 8.0 * u, 12.0 * u, 16.0 * u), Color(ink, 0.35))

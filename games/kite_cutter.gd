@@ -9,10 +9,7 @@ const DRIFT_IDLE := 0.10          # idle horizontal drift, fraction of half-widt
 const DRIFT_HELD := 0.34          # extra drift at full tension, fraction of half-width
 const BOW_F := 0.20               # string bow amount, fraction of half-width
 const TENSION_TIME := 2.2         # seconds of holding to reach full tension
-const RISK_BASE := 0.05           # base chance a rival cuts you first, per 0.5s held
-const RISK_GROWTH := 0.04         # + this much per additional 0.5s interval held
-const RISK_INTERVAL := 0.5
-const RISK_CAP := 0.85
+const CUT_HOLD_TIME := 1.5        # seconds fully-taut + a rival touching your string before it cuts YOU
 const CUT_RADIUS := 46.0          # how close a rival must be to your string to be "crossing"
 const GUST_TELL := 0.4            # seconds a gust change is telegraphed before it happens
 const SPAWN_BASE := 1.6
@@ -35,8 +32,7 @@ var anchor := Vector2.ZERO
 var kite_pos := Vector2.ZERO
 var tension := 0.0
 var hold_t := 0.0
-var risk_t := 0.0
-var risk_hits := 0
+var touch_hold_t := 0.0      # seconds spent continuously fully taut (danger climbs once this passes CUT_HOLD_TIME)
 
 var rivals := []             # [{p: Vector2, v: Vector2, color: Color, tail_ph: float}]
 var spawn_t := 0.0
@@ -45,6 +41,9 @@ var roofs := []               # [{x, w, h, antenna: bool, tank: bool}] precomput
 var bg_kites := []            # [{p: Vector2, s: float, color: Color, ph: float}] decorative, non-interactive
 var birds := []               # [{p: Vector2, v: Vector2, ph: float}] decorative
 var bot_release_target := 1.0
+var _bot_decided := false
+var _bot_ignore := false
+var _bot_greedy := false
 
 func _init() -> void:
 	game_id = "kite_cutter"
@@ -65,8 +64,7 @@ func _setup() -> void:
 	telegraph = false
 	tension = 0.0
 	hold_t = 0.0
-	risk_t = 0.0
-	risk_hits = 0
+	touch_hold_t = 0.0
 	rivals.clear()
 	spawn_t = 0.4
 	anchor = Vector2(W * 0.5, H * ANCHOR_Y_F)
@@ -117,9 +115,9 @@ func _spawn_rival() -> void:
 func _on_press() -> void:
 	tension = 0.0
 	hold_t = 0.0
-	risk_t = 0.0
-	risk_hits = 0
+	touch_hold_t = 0.0
 	bot_release_target = rng.randf_range(0.5, 2.6)
+	_bot_greedy = rng.randf() < 0.15   # occasionally the bot gets greedy and overholds, so the fail state actually happens
 	Sfx.loop_start("tri", 180.0, 0.12)
 
 func _on_release() -> void:
@@ -203,18 +201,21 @@ func _tick(dt: float) -> void:
 	if holding:
 		hold_t += dt
 		tension = clampf(hold_t / TENSION_TIME, 0.0, 1.0)
-		risk_t += dt
-		if risk_t >= RISK_INTERVAL:
-			risk_t -= RISK_INTERVAL
-			risk_hits += 1
-			var chance: float = clampf(RISK_BASE + RISK_GROWTH * risk_hits, 0.0, RISK_CAP)
-			if not rivals.is_empty() and rng.randf() < chance:
-				_get_cut()
-				return
+		# deterministic, telegraphed risk: no hidden roll. Hold fully taut too long
+		# (past CUT_HOLD_TIME) and the next rival that touches your string cuts YOU --
+		# release the instant a rival glows on your string instead, to cut them first.
+		if tension >= 1.0:
+			touch_hold_t += dt
+		else:
+			touch_hold_t = 0.0
+		if touch_hold_t >= CUT_HOLD_TIME:
+			for rv in rivals:
+				if _crossing(rv):
+					_get_cut()
+					return
 	else:
 		tension = maxf(0.0, tension - dt * 1.5)
-		risk_hits = 0
-		risk_t = 0.0
+		touch_hold_t = 0.0
 
 	var drift: float = (DRIFT_IDLE + (DRIFT_HELD - DRIFT_IDLE) * tension) if holding else DRIFT_IDLE
 	kite_pos.x = kite_home.x + wind_x * drift * (W * 0.5)
@@ -239,14 +240,15 @@ func _tick(dt: float) -> void:
 func _wind_sock(p: Vector2) -> void:
 	var ang := wind_x * 0.6
 	var glow: float = 1.0 if not telegraph else 0.55 + 0.45 * sin(time * 26.0)
-	draw_line(p, p + Vector2(0, -46), INK, 5.0, true)
+	# pole shortened (was -46) so the flag tip doesn't poke into the top HUD strip
+	draw_line(p, p + Vector2(0, -34), INK, 5.0, true)
 	# faint streak trail flowing with the wind so the sock reads as a wind cue, not an orphan flag
 	var wdir := 1.0 if wind_x >= 0.0 else -1.0
 	for k in 3:
 		var t := float(k)
-		draw_line(p + Vector2(0, -30.0 + t * 8.0), p + Vector2(wdir * (10.0 + absf(wind_x) * 16.0), -30.0 + t * 8.0),
+		draw_line(p + Vector2(0, -22.0 + t * 6.0), p + Vector2(wdir * (10.0 + absf(wind_x) * 16.0), -22.0 + t * 6.0),
 			Color(INK, 0.18), 2.0, true)
-	set_xform(p + Vector2(0, -46), ang)
+	set_xform(p + Vector2(0, -34), ang)
 	var col := accent if telegraph else Color(INK, 0.8)
 	draw_colored_polygon(PackedVector2Array([Vector2.ZERO, Vector2(30.0 * glow, -9.0), Vector2(34.0 * glow, 0.0), Vector2(30.0 * glow, 9.0)]), col)
 	set_xform()
@@ -288,36 +290,48 @@ func _draw_game() -> void:
 		draw_line(bp + Vector2(-8, wing), bp, Color(INK, 0.4), 2.0, true)
 		draw_line(bp, bp + Vector2(8, wing), Color(INK, 0.4), 2.0, true)
 
-	_wind_sock(Vector2(W * 0.86, H * 0.20))
+	_wind_sock(Vector2(W * 0.86, H * 0.24))
 
 	if string_pts.size() > 1:
 		draw_polyline(string_pts, INK, 4.0, true)
 	draw_circle(anchor, 14.0, INK)
 	draw_circle(anchor, 8.0, accent)
 
+	# overheld = you've stayed fully taut past CUT_HOLD_TIME -- the danger window where the
+	# next rival to touch your string cuts YOU instead of the other way around.
+	var overheld := tension >= 1.0 and touch_hold_t >= CUT_HOLD_TIME
+
 	if holding:
+		# single bar: just the tension you're pulling. All the risk now lives in the rival
+		# kites themselves (they glow red once you've held too long) -- one fewer invented
+		# number to track.
 		var bar_w := 160.0
 		var bar_p := anchor + Vector2(-bar_w / 2.0, -40.0)
 		text_c("PULL", bar_p + Vector2(bar_w / 2.0, -16.0), 14, Color(INK, 0.7), false)
 		draw_rect(Rect2(bar_p, Vector2(bar_w, 12.0)), Color(INK, 0.25))
-		draw_rect(Rect2(bar_p, Vector2(bar_w * tension, 12.0)), accent)
-		var danger: float = clampf(RISK_BASE + RISK_GROWTH * risk_hits, 0.0, RISK_CAP)
-		var flash: float = 1.0 if danger < 0.5 else (0.5 + 0.5 * sin(time * 16.0))
-		draw_rect(Rect2(bar_p + Vector2(0, 18), Vector2(bar_w, 8.0)), Color(INK, 0.18))
-		draw_rect(Rect2(bar_p + Vector2(0, 18), Vector2(bar_w * danger, 8.0)), Color(Color("#C4432B"), flash))
-		text_c("RISK", bar_p + Vector2(bar_w / 2.0, 44.0), 14, Color("#C4432B", 0.6 + 0.4 * flash), false)
+		var pull_col := accent
+		if overheld:
+			pull_col = Color("#C4432B").lerp(accent, 0.5 + 0.5 * sin(time * 16.0))
+		draw_rect(Rect2(bar_p, Vector2(bar_w * tension, 12.0)), pull_col)
 
 	# rivals: real diamond kites with their own tail + a short string toward an implied edge anchor,
 	# each a distinct colour so "cut a kite" reads instantly
 	for rv in rivals:
 		var cross := _crossing(rv)
+		# danger = you've overheld AND this rival is on your string right now -- release
+		# THIS frame or it cuts you. Pulses faster the longer you've overheld.
+		var danger := cross and overheld
 		var dir := 1.0 if rv.v.x > 0.0 else -1.0
 		var edge_anchor := Vector2(rv.p.x - dir * 34.0, H * 0.98)
 		draw_line(rv.p, edge_anchor, Color(rv.color, 0.5), 2.0, true)
-		if cross:
+		if danger:
+			var pulse: float = 0.5 + 0.5 * sin(time * (10.0 + 6.0 * (touch_hold_t / CUT_HOLD_TIME)))
+			draw_circle(rv.p, 34.0, Color(Color("#C4432B"), 0.35 + 0.35 * pulse))
+		elif cross:
 			draw_circle(rv.p, 30.0, Color(1, 1, 1, 0.35))
 		set_xform(rv.p, 0.0, Vector2.ONE)
-		_kite_shape(0.6, dir, GOLD if cross else rv.color, 46.0, rv.tail_ph)
+		var kite_col: Color = Color("#C4432B") if danger else (GOLD if cross else rv.color)
+		_kite_shape(0.6, dir, kite_col, 46.0, rv.tail_ph)
 		set_xform()
 
 	set_xform(kite_pos, wind_x * 0.15)
@@ -335,11 +349,30 @@ func _draw_game() -> void:
 func _bot(dt: float) -> void:
 	if not holding:
 		_press()
+		_bot_decided = false
 		return
+	if _bot_greedy:
+		# deliberately courts the overheld self-cut sometimes; failsafe release if no
+		# rival ever crosses so it doesn't hold forever.
+		if hold_t > TENSION_TIME + CUT_HOLD_TIME + 1.0:
+			_release()
+		return
+	var crossing_now := false
 	for rv in rivals:
 		if _crossing(rv):
-			if rng.randf() < 0.6:
-				_release()
+			crossing_now = true
+			break
+	if crossing_now:
+		# decide once per continuous crossing (not every frame) so a "greedy, holds too
+		# long" bot run actually plays out instead of re-rolling itself out of danger
+		# every single frame.
+		if not _bot_decided:
+			_bot_decided = true
+			_bot_ignore = rng.randf() < 0.3
+		if not _bot_ignore:
+			_release()
 			return
+	else:
+		_bot_decided = false
 	if hold_t > bot_release_target:
 		_release()
