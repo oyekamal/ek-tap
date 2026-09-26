@@ -41,6 +41,8 @@ var font_big: Font = preload("res://fonts/LilitaOne-Regular.ttf")
 var font_body: Font = preload("res://fonts/AtkinsonHyperlegible-Bold.ttf")
 
 # ---------- internals ----------
+const OVER_DELAY := 0.9   ## seconds between the fail and the game-over card
+var _run_id := 0
 var _trauma := 0.0
 var _shake_off := Vector2.ZERO
 var _freeze_left := 0.0
@@ -68,6 +70,7 @@ func _on_resize() -> void:
 	H = s.y
 
 func start_run() -> void:
+	_run_id += 1
 	rng.randomize()
 	score = 0.0
 	lives = max_lives
@@ -106,7 +109,11 @@ func end_run(heading := "") -> void:
 	holding = false
 	Sfx.loop_stop()
 	var old := Save.submit(game_id, score, lower_is_better)
-	_hud.show_over(self, heading, old)
+	# let the failure moment play out (freeze on the cause) before the card covers it
+	var run := _run_id
+	get_tree().create_timer(OVER_DELAY).timeout.connect(func():
+		if run == _run_id and not running:
+			_hud.show_over(self, heading, old))
 
 func shake(amount: float) -> void:
 	_trauma = clampf(maxf(_trauma, amount), 0.0, 1.0)
@@ -196,7 +203,7 @@ func _process(delta: float) -> void:
 		_tick(dt)
 	elif _autoplay:
 		_bot_t += delta
-		if _bot_t > 1.2:
+		if _bot_t > OVER_DELAY + 1.2:
 			_bot_t = 0.0
 			start_run()
 	for p in _parts:
