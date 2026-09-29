@@ -1,0 +1,8 @@
+# third-party reference screenshots + blind-compare pairs that embed them (not ours to publish)
+bar/
+gauntlet/pair_*.png
+# superseded intermediates
+sprites_game3/
+sprites_game4/
+sprites_r3bak/
+__pycache__/
